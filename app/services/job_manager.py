@@ -1,35 +1,145 @@
 import uuid
 import asyncio
+import logging
 from typing import Dict, Any
 from app.services.github_service import fetch_github_data
 from app.services.repo_cloner import clone_repositories, cleanup_cloned_repos
+from app.services.analyzer import analyze_repository
+
+logger = logging.getLogger(__name__)
+
+MAX_REPOSITORIES = 3
 
 # In-memory store for task states (In production, replace with Redis or Postgres)
 JOBS_DB: Dict[str, Dict[str, Any]] = {}
 
+
+def _select_repositories(raw_github: dict) -> list[dict]:
+    """Select recent public repositories with source-language metadata."""
+    selected = []
+    repositories = raw_github.get("repositories", {}).get("nodes", [])
+
+    for repository in repositories:
+        if not repository or repository.get("isFork") or repository.get("isPrivate"):
+            continue
+
+        languages = []
+        primary_language = repository.get("primaryLanguage") or {}
+        if primary_language.get("name"):
+            languages.append(primary_language["name"])
+        languages.extend(
+            edge.get("node", {}).get("name")
+            for edge in repository.get("languages", {}).get("edges", [])
+            if edge.get("node", {}).get("name")
+        )
+
+        if languages:
+            selected.append(repository)
+
+        if len(selected) == MAX_REPOSITORIES:
+            break
+
+    return selected
+
+
+def _calculate_overall_score(repository_results: list[dict]) -> int | None:
+    """Weight analyzable repository scores by their Python code-line counts."""
+    weighted_score = 0.0
+    total_lines = 0
+
+    for result in repository_results:
+        analysis = result.get("analysis")
+        if result.get("status") != "analyzed" or not analysis:
+            continue
+
+        code_lines = analysis.get("total_code_lines", 0)
+        score = analysis.get("static_score", {}).get("total_score")
+        if score is None:
+            continue
+
+        weight = code_lines or 1
+        weighted_score += score * weight
+        total_lines += weight
+
+    if not total_lines:
+        return None
+
+    return round(weighted_score / total_lines)
+
 async def run_assessment_pipeline(task_id: str, username: str, job_description: str | None):
+    cloned_paths = {}
     try:
+        logger.info("Starting candidate analysis for %s", username)
+
         # Stage 1: Fetch metadata via GraphQL (Member 2)
         JOBS_DB[task_id]["status"] = "FETCHING_GITHUB_METADATA"
         raw_github = await fetch_github_data(username)
-        
-        # Extract non-forked repo names
-        repo_nodes = raw_github.get("repositories", {}).get("nodes", [])
-        repo_names = [r["name"] for r in repo_nodes if not r.get("isFork")]
+
+        selected_repositories = _select_repositories(raw_github)
+        repo_names = [repository["name"] for repository in selected_repositories]
+        logger.info("Selected repositories for %s: %s", username, repo_names)
 
         # Stage 2: Shallow clone candidate code (Member 2)
         JOBS_DB[task_id]["status"] = "CLONING_REPOSITORIES"
-        cloned_paths = await asyncio.to_thread(clone_repositories, username, repo_names, max_repos=3)
+        cloned_paths = await asyncio.to_thread(
+            clone_repositories,
+            username,
+            repo_names,
+            max_repos=MAX_REPOSITORIES,
+        )
 
-        # Stage 3: Static Analysis Hook (Member 3 will attach their function here)
+        # Stage 3: Analyze each clone without executing repository code.
         JOBS_DB[task_id]["status"] = "RUNNING_STATIC_ANALYSIS"
-        await asyncio.sleep(2)  # Simulating static analysis execution
-        mock_static_results = {
-            "authenticity_score": 88.5,
-            "cyclomatic_complexity": "Low",
-            "has_unit_tests": any("test" in name.lower() for name in repo_names),
-            "detected_secrets": 0
-        }
+        repository_results = []
+        for repository in selected_repositories:
+            name = repository["name"]
+            repository_result = {
+                "name": name,
+                "url": repository.get("url") or f"https://github.com/{username}/{name}",
+            }
+            clone_path = cloned_paths.get(name)
+
+            if not clone_path:
+                repository_result.update({
+                    "status": "clone_failed",
+                    "error": "Repository could not be cloned.",
+                })
+                repository_results.append(repository_result)
+                logger.warning("Skipping %s because cloning failed", name)
+                continue
+
+            try:
+                logger.info("Starting static analysis for %s at %s", name, clone_path)
+                analysis = await asyncio.to_thread(analyze_repository, clone_path)
+                if not analysis.get("files_analyzed"):
+                    repository_result.update({
+                        "status": "unsupported_for_static_analysis",
+                        "analysis": analysis,
+                        "static_score": None,
+                    })
+                    logger.info("Repository %s has no Python files", name)
+                else:
+                    repository_result.update({
+                        "status": "analyzed",
+                        "analysis": analysis,
+                        "static_score": analysis["static_score"],
+                    })
+                    logger.info(
+                        "Completed static analysis for %s with score %s",
+                        name,
+                        analysis["static_score"]["total_score"],
+                    )
+            except Exception as error:
+                repository_result.update({
+                    "status": "analysis_failed",
+                    "error": str(error),
+                })
+                logger.exception("Static analysis failed for %s", name)
+
+            repository_results.append(repository_result)
+
+        overall_static_score = _calculate_overall_score(repository_results)
+        logger.info("Overall static score for %s: %s", username, overall_static_score)
 
         # Stage 4: AI Matching Hook (Member 4 will attach their function here)
         JOBS_DB[task_id]["status"] = "RUNNING_AI_EVALUATION"
@@ -42,10 +152,7 @@ async def run_assessment_pipeline(task_id: str, username: str, job_description: 
             ]
         }
 
-        # Stage 5: Cleanup cloned files from disk
-        cleanup_cloned_repos(cloned_paths)
-
-        # Stage 6: Final Combined Report Assembly
+        # Stage 5: Final Combined Report Assembly
         JOBS_DB[task_id]["status"] = "COMPLETED"
         JOBS_DB[task_id]["report"] = {
             "candidate": {
@@ -53,10 +160,19 @@ async def run_assessment_pipeline(task_id: str, username: str, job_description: 
                 "avatar_url": raw_github.get("avatarUrl"),
                 "total_contributions": raw_github["contributionsCollection"]["contributionCalendar"]["totalContributions"],
             },
-            "authenticity_and_quality": mock_static_results,
+            "repositories_analyzed": sum(
+                result.get("status") == "analyzed" for result in repository_results
+            ),
+            "repositories": repository_results,
+            "overall_static_score": overall_static_score,
             "jd_match_and_interview": mock_ai_results
         }
 
     except Exception as e:
         JOBS_DB[task_id]["status"] = "FAILED"
         JOBS_DB[task_id]["error"] = str(e)
+        logger.exception("Candidate analysis failed for %s", username)
+    finally:
+        if cloned_paths:
+            cleanup_cloned_repos(cloned_paths)
+            logger.info("Cleaned up cloned repositories for %s", username)
