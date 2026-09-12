@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from .ast_analyzer import analyze_python_file
+from .js_analyzer import analyze_javascript_file
 from .metrics import calculate_loc
 from .security import scan_file_for_secrets
 from .test_detector import detect_tests
@@ -8,9 +9,33 @@ from .smells import detect_code_smells
 from .scoring import calculate_static_score
 
 
+SUPPORTED_EXTENSIONS = {
+    ".py",
+    ".js",
+    ".jsx",
+    ".ts",
+    ".tsx",
+}
+
+IGNORED_DIRECTORIES = {
+    ".git",
+    "venv",
+    ".venv",
+    "node_modules",
+    "__pycache__",
+}
+
+
 def analyze_repository(repo_path: str) -> dict:
     """
     Run complete static analysis on a repository.
+
+    Supports:
+    - Python
+    - JavaScript
+    - JSX
+    - TypeScript
+    - TSX
 
     Includes:
     - AST analysis
@@ -24,25 +49,44 @@ def analyze_repository(repo_path: str) -> dict:
     repo = Path(repo_path)
 
     # --------------------------------------------------
-    # FIND PYTHON FILES
+    # FIND SUPPORTED SOURCE FILES
     # --------------------------------------------------
 
-    python_files = []
+    source_files = []
 
-    for path in repo.rglob("*.py"):
+    for path in repo.rglob("*"):
+        if not path.is_file():
+            continue
+
+        if path.suffix.lower() not in SUPPORTED_EXTENSIONS:
+            continue
 
         if any(
             ignored in path.parts
-            for ignored in [
-                ".git",
-                "venv",
-                ".venv",
-                "node_modules",
-            ]
+            for ignored in IGNORED_DIRECTORIES
         ):
             continue
 
-        python_files.append(path)
+        # Keep test files out of production source analysis.
+        path_parts = {part.lower() for part in path.parts}
+
+        if (
+            "test" in path_parts
+            or "tests" in path_parts
+            or path.name.lower().startswith("test_")
+            or path.name.lower().endswith("_test.py")
+            or path.name.lower().endswith(".test.js")
+            or path.name.lower().endswith(".test.jsx")
+            or path.name.lower().endswith(".test.ts")
+            or path.name.lower().endswith(".test.tsx")
+            or path.name.lower().endswith(".spec.js")
+            or path.name.lower().endswith(".spec.jsx")
+            or path.name.lower().endswith(".spec.ts")
+            or path.name.lower().endswith(".spec.tsx")
+        ):
+            continue
+
+        source_files.append(path)
 
     # --------------------------------------------------
     # INITIALIZE RESULTS
@@ -59,44 +103,68 @@ def analyze_repository(repo_path: str) -> dict:
     total_smells = 0
 
     # --------------------------------------------------
-    # ANALYZE EACH PYTHON FILE
+    # ANALYZE EACH SOURCE FILE
     # --------------------------------------------------
 
-    for file_path in python_files:
+    for file_path in source_files:
 
-        # -----------------------------
-        # AST ANALYSIS
-        # -----------------------------
+        suffix = file_path.suffix.lower()
 
-        ast_result = analyze_python_file(file_path)
+        # ----------------------------------------------
+        # LANGUAGE-SPECIFIC AST ANALYSIS
+        # ----------------------------------------------
 
-        if not ast_result["success"]:
-            file_results.append(ast_result)
-            continue
+        if suffix == ".py":
+            ast_result = analyze_python_file(file_path)
+        else:
+            ast_result = analyze_javascript_file(file_path)
 
-        # -----------------------------
+        # ----------------------------------------------
         # LOC ANALYSIS
-        # -----------------------------
+        # ----------------------------------------------
 
         loc_result = calculate_loc(file_path)
 
-        # -----------------------------
+        # ----------------------------------------------
         # SECRET SCAN
-        # -----------------------------
+        # ----------------------------------------------
 
         secrets = scan_file_for_secrets(file_path)
 
         secret_findings.extend(secrets)
 
-        # -----------------------------
-        # CODE SMELL ANALYSIS
-        # -----------------------------
+        # ----------------------------------------------
+        # CODE SMELLS
+        # ----------------------------------------------
 
-        smells = detect_code_smells(file_path)
+        # The existing smell detector is Python-oriented.
+        # Keep it on Python files for now so we don't
+        # break the existing analyzer.
+        if suffix == ".py":
+            smells = detect_code_smells(file_path)
+        else:
+            smells = []
 
-        # -----------------------------
+        # ----------------------------------------------
+        # HANDLE AST FAILURE
+        # ----------------------------------------------
+
+        if not ast_result["success"]:
+
+            file_results.append({
+                "file": str(file_path),
+                "language": suffix.lstrip("."),
+                "ast": ast_result,
+                "loc": loc_result,
+                "secrets": secrets,
+                "smells": smells,
+            })
+
+            continue
+
+        # ----------------------------------------------
         # AGGREGATE METRICS
-        # -----------------------------
+        # ----------------------------------------------
 
         total_code_lines += loc_result["code_lines"]
 
@@ -108,12 +176,13 @@ def analyze_repository(repo_path: str) -> dict:
 
         total_smells += len(smells)
 
-        # -----------------------------
+        # ----------------------------------------------
         # STORE FILE RESULT
-        # -----------------------------
+        # ----------------------------------------------
 
         file_results.append({
             "file": str(file_path),
+            "language": suffix.lstrip("."),
             "ast": ast_result,
             "loc": loc_result,
             "secrets": secrets,
@@ -131,8 +200,8 @@ def analyze_repository(repo_path: str) -> dict:
     # --------------------------------------------------
 
     average_complexity = (
-        total_complexity / len(python_files)
-        if python_files
+        total_complexity / len(source_files)
+        if source_files
         else 0
     )
 
@@ -143,7 +212,7 @@ def analyze_repository(repo_path: str) -> dict:
     static_score = calculate_static_score(
         complexity=average_complexity,
         total_code_lines=total_code_lines,
-        files_analyzed=len(python_files),
+        files_analyzed=len(source_files),
         has_tests=test_result["has_tests"],
         secret_count=len(secret_findings),
         smell_count=total_smells,
@@ -156,7 +225,7 @@ def analyze_repository(repo_path: str) -> dict:
     return {
         "repository": str(repo),
 
-        "files_analyzed": len(python_files),
+        "files_analyzed": len(source_files),
 
         "total_code_lines": total_code_lines,
 
