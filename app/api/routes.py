@@ -21,6 +21,29 @@ async def get_repositories(username: str):
 
         repositories = _select_repositories(raw_github)
 
+        # Contribution data
+        contribution_calendar = (
+            raw_github.get("contributionsCollection", {})
+            .get("contributionCalendar", {})
+        )
+
+        total_contributions = contribution_calendar.get(
+            "totalContributions", 0
+        )
+
+        contribution_days = []
+
+        for week in contribution_calendar.get("weeks", []):
+            for day in week.get("contributionDays", []):
+                contribution_days.append(day)
+
+        active_days = sum(
+            1
+            for day in contribution_days
+            if day.get("contributionCount", 0) > 0
+        )
+
+        # Repository data
         formatted_repositories = []
 
         for repository in repositories:
@@ -28,22 +51,38 @@ async def get_repositories(username: str):
                 "name": repository.get("name"),
                 "description": repository.get("description"),
                 "url": repository.get("url"),
+
                 "primary_language": (
                     repository.get("primaryLanguage", {}) or {}
                 ).get("name"),
+
                 "languages": [
                     edge.get("node", {}).get("name")
                     for edge in (
-                        repository.get("languages", {}).get("edges", []) or []
+                        repository.get("languages", {}).get("edges", [])
+                        or []
                     )
                     if edge.get("node")
                 ],
+
                 "stars": repository.get("stargazerCount", 0),
                 "forks": repository.get("forkCount", 0),
             })
 
         return {
-            "username": raw_github.get("login"),
+            "candidate": {
+                "username": raw_github.get("login"),
+                "name": raw_github.get("name"),
+                "avatar_url": raw_github.get("avatarUrl"),
+                "bio": raw_github.get("bio"),
+                "followers": (
+                    raw_github.get("followers", {})
+                    .get("totalCount", 0)
+                ),
+                "total_contributions": total_contributions,
+                "active_days": active_days,
+            },
+
             "repositories": formatted_repositories,
         }
 
