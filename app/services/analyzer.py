@@ -7,6 +7,7 @@ from .security import scan_file_for_secrets
 from .test_detector import detect_tests
 from .smells import detect_code_smells
 from .scoring import calculate_static_score
+from .js_smells import detect_javascript_code_smells
 
 
 SUPPORTED_EXTENSIONS = {
@@ -143,7 +144,7 @@ def analyze_repository(repo_path: str) -> dict:
         if suffix == ".py":
             smells = detect_code_smells(file_path)
         else:
-            smells = []
+            smells = detect_javascript_code_smells(file_path)
 
         # ----------------------------------------------
         # HANDLE AST FAILURE

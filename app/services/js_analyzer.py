@@ -60,6 +60,11 @@ def analyze_javascript_file(file_path: Path) -> dict:
     imports = 0
     exports = 0
 
+    # Additional complexity constructs
+    ternaries = 0
+    boolean_operations = 0
+    catch_blocks = 0
+
     function_nodes = {
         "function_declaration",
         "function_expression",
@@ -87,6 +92,9 @@ def analyze_javascript_file(file_path: Path) -> dict:
         nonlocal loops
         nonlocal imports
         nonlocal exports
+        nonlocal ternaries
+        nonlocal boolean_operations
+        nonlocal catch_blocks
 
         if node.type in function_nodes:
             functions += 1
@@ -109,15 +117,54 @@ def analyze_javascript_file(file_path: Path) -> dict:
         elif node.type.startswith("export_"):
             exports += 1
 
+        # JavaScript / TypeScript ternary operator:
+        # condition ? value1 : value2
+        elif node.type == "ternary_expression":
+            ternaries += 1
+
+        # JavaScript / TypeScript boolean operators:
+        # && and ||
+        elif node.type == "binary_expression":
+            operator = None
+
+            for child in node.children:
+                if child.type in {"&&", "||"}:
+                    operator = child.type
+                    break
+
+            if operator is not None:
+                boolean_operations += 1
+
+        # try { ... } catch (...) { ... }
+        elif node.type == "catch_clause":
+            catch_blocks += 1
+
         for child in node.children:
             walk(child)
 
     walk(root)
 
+    # --------------------------------------------------
+    # COMPLEXITY
+    # --------------------------------------------------
+    #
+    # Same general philosophy as Python:
+    #
+    # Base complexity       = 1
+    # if                    +1
+    # loops                 +1
+    # ternary               +1
+    # && / ||               +1
+    # catch                 +1
+    #
+
     complexity = (
         1
         + if_statements
         + loops
+        + ternaries
+        + boolean_operations
+        + catch_blocks
     )
 
     return {
@@ -130,9 +177,9 @@ def analyze_javascript_file(file_path: Path) -> dict:
         "loops": loops,
         "imports": imports,
         "exports": exports,
+        "ternaries": ternaries,
+        "boolean_operations": boolean_operations,
+        "catch_blocks": catch_blocks,
         "complexity": complexity,
         "syntax_errors": root.has_error,
     }
-
-
-    
