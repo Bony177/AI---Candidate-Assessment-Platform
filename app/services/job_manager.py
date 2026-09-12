@@ -8,36 +8,44 @@ from app.services.analyzer import analyze_repository
 
 logger = logging.getLogger(__name__)
 
-MAX_REPOSITORIES = 3
+MAX_REPOSITORIES = 100
 
 # In-memory store for task states (In production, replace with Redis or Postgres)
 JOBS_DB: Dict[str, Dict[str, Any]] = {}
 
 
 def _select_repositories(raw_github: dict) -> list[dict]:
-    """Select recent public repositories with source-language metadata."""
+    """Select recent public repositories owned by the candidate."""
     selected = []
     repositories = raw_github.get("repositories", {}).get("nodes", [])
+    candidate_login = raw_github.get("login", "").lower()
 
     for repository in repositories:
-        if not repository or repository.get("isFork") or repository.get("isPrivate"):
+        if not repository:
             continue
 
-        languages = []
-        primary_language = repository.get("primaryLanguage") or {}
-        if primary_language.get("name"):
-            languages.append(primary_language["name"])
-        languages.extend(
-            edge.get("node", {}).get("name")
-            for edge in repository.get("languages", {}).get("edges", [])
-            if edge.get("node", {}).get("name")
-        )
+        if repository.get("isFork"):
+            continue
 
-        if languages:
-            selected.append(repository)
+        if repository.get("isArchived"):
+            continue
 
-        if len(selected) == MAX_REPOSITORIES:
-            break
+        owner = repository.get("owner") or {}
+        owner_login = owner.get("login", "").lower()
+
+        # Safety check: repository must belong to the candidate.
+        if owner_login != candidate_login:
+            logger.warning(
+                "Skipping repository %s because owner is %s, expected %s",
+                repository.get("name"),
+                owner_login,
+                candidate_login,
+            )
+            continue
+
+        selected.append(repository)
+
+        
 
     return selected
 
@@ -82,11 +90,10 @@ async def run_assessment_pipeline(task_id: str, username: str, job_description: 
         # Stage 2: Shallow clone candidate code (Member 2)
         JOBS_DB[task_id]["status"] = "CLONING_REPOSITORIES"
         cloned_paths = await asyncio.to_thread(
-            clone_repositories,
-            username,
-            repo_names,
-            max_repos=MAX_REPOSITORIES,
-        )
+    clone_repositories,
+    selected_repositories,
+    max_repos=MAX_REPOSITORIES,
+)
 
         # Stage 3: Analyze each clone without executing repository code.
         JOBS_DB[task_id]["status"] = "RUNNING_STATIC_ANALYSIS"

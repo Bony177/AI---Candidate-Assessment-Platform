@@ -29,17 +29,27 @@ query($username: String!) {
         }
       }
     }
-    repositories(first: 10, orderBy: {field: PUSHED_AT, direction: DESC}, isFork: false, privacy: PUBLIC) {
+    repositories(first: 100, orderBy: {field: PUSHED_AT, direction: DESC}, isFork: false, privacy: PUBLIC) {
       nodes {
-        name
-        description
-        url
-        stargazerCount
-        forkCount
-        primaryLanguage {
-          name
-        }
-        languages(first: 5, orderBy: {field: SIZE, direction: DESC}) {
+  name
+  description
+  url
+
+  owner {
+    login
+  }
+
+  isFork
+  isArchived
+
+  stargazerCount
+  forkCount
+
+  primaryLanguage {
+    name
+  }
+
+  languages(first: 5, orderBy: {field: SIZE, direction: DESC}) {
           edges {
             size
             node {

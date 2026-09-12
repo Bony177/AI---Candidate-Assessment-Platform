@@ -3,13 +3,60 @@ from pydantic import BaseModel
 from typing import Optional
 import uuid
 
-from app.services.job_manager import JOBS_DB, run_assessment_pipeline
+from app.services.job_manager import JOBS_DB, run_assessment_pipeline, _select_repositories
+from app.services.github_service import fetch_github_data
 
 router = APIRouter()
 
 class AnalyzeRequest(BaseModel):
     github_username: str
     job_description: Optional[str] = None
+
+
+@router.get("/repositories/{username}")
+async def get_repositories(username: str):
+    try:
+        raw_github = await fetch_github_data(username)
+
+        repositories = _select_repositories(raw_github)
+
+        formatted_repositories = []
+
+        for repository in repositories:
+            formatted_repositories.append({
+                "name": repository.get("name"),
+                "description": repository.get("description"),
+                "url": repository.get("url"),
+                "primary_language": (
+                    repository.get("primaryLanguage", {}) or {}
+                ).get("name"),
+                "languages": [
+                    edge.get("node", {}).get("name")
+                    for edge in (
+                        repository.get("languages", {}).get("edges", []) or []
+                    )
+                    if edge.get("node")
+                ],
+                "stars": repository.get("stargazerCount", 0),
+                "forks": repository.get("forkCount", 0),
+            })
+
+        return {
+            "username": raw_github.get("login"),
+            "repositories": formatted_repositories,
+        }
+
+    except ValueError as error:
+        raise HTTPException(
+            status_code=404,
+            detail=str(error),
+        )
+
+    except Exception as error:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to fetch repositories: {str(error)}",
+        )
 
 @router.post("/analyze", status_code=status.HTTP_202_ACCEPTED)
 async def start_analysis(request: AnalyzeRequest, background_tasks: BackgroundTasks):
