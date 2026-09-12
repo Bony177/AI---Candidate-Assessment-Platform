@@ -10,6 +10,7 @@ router = APIRouter()
 
 class AnalyzeRequest(BaseModel):
     github_username: str
+    selected_repositories: list[str]
     job_description: Optional[str] = None
 
 
@@ -72,11 +73,12 @@ async def start_analysis(request: AnalyzeRequest, background_tasks: BackgroundTa
 
     # Dispatch background task without blocking the HTTP response
     background_tasks.add_task(
-        run_assessment_pipeline, 
-        task_id, 
-        request.github_username, 
-        request.job_description
-    )
+    run_assessment_pipeline, 
+    task_id, 
+    request.github_username, 
+    request.job_description,
+    request.selected_repositories,
+     )
 
     return {
         "task_id": task_id,
