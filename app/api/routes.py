@@ -1,7 +1,9 @@
+from app.ai_service import test_gemini
 from fastapi import APIRouter, HTTPException, BackgroundTasks, status
 from pydantic import BaseModel
 from typing import Optional
 import uuid
+
 
 from app.services.job_manager import JOBS_DB, run_assessment_pipeline, _select_repositories
 from app.services.github_service import fetch_github_data
@@ -14,6 +16,11 @@ class AnalyzeRequest(BaseModel):
     job_description: Optional[str] = None
 
 
+@router.get("/test-gemini")
+def test_gemini_endpoint():
+    return {
+        "message": test_gemini()
+    }
 @router.get("/repositories/{username}")
 async def get_repositories(username: str):
     try:
