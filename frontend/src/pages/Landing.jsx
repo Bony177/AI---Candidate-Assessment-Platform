@@ -62,27 +62,16 @@ function Landing({ username, setUsername, loading, error, analyzeUsername }) {
         </div>
 
         {/* RIGHT VISUAL */}
+        {/* RIGHT VISUAL */}
         <div className="landing-visual">
-          <div className="ascii-art">
-            <pre>{`
-             .-=========-.
-          .-'             '-.
-        .'    ANALYZE       '.
-       /                     \\
-      ;       ┌───────┐       ;
-      |       │ CODE  │       |
-      ;       └───────┘       ;
-       \\        ↓ ↓ ↓        /
-        '.    ANALYSIS     .'
-          '-.           .-'
-             '-=======-'
-
-        [ 01 ] [ 02 ] [ 03 ]
-
-           CODE / SKILLS
-            / POTENTIAL
-            `}</pre>
-          </div>
+          <video
+            className="spiral-video"
+            src="/spiral.webm"
+            autoPlay
+            loop
+            muted
+            playsInline
+          />
         </div>
       </section>
 

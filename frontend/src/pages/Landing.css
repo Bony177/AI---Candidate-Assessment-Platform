@@ -1,11 +1,13 @@
+@import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap');
 .landing-page {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
   padding: 28px 42px;
   overflow: hidden;
-  background: #0b0b0d;
+  background: #000000;
   color: #f2f2f0;
+  font-family: "Space Mono", monospace;
 }
 
 
@@ -71,7 +73,7 @@
 }
 
 .landing-content {
-  padding-left: 7vw;
+  padding-left: 3vw;
 }
 
 .landing-eyebrow {
@@ -223,23 +225,31 @@
 ========================= */
 
 .landing-visual {
-  display: flex;
+  width: 100%;
+  height: 100%;
+  min-height: clamp(400px, 55vh, 700px);
 
+  display: flex;
   justify-content: center;
   align-items: center;
+
+  overflow: visible;
 }
 
-.ascii-art {
-  color: #8b8b93;
+.spiral-video {
+  width: clamp(320px, 42vw, 680px);
+  height: auto;
 
-  opacity: 0.8;
+  display: block;
+  object-fit: contain;
 
-  font-size: 13px;
-  line-height: 1.45;
+  /* tweak these */
+  transform: translate(
+    clamp(0px, 2vw, 30px),
+    clamp(0px, 1vh, 15px)
+  );
 
-  text-align: center;
-
-  transform: scale(1.25);
+  opacity: 0.9;
 }
 
 
