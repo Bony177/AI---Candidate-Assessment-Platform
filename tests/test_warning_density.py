@@ -89,7 +89,8 @@ class TestCodeSmellScoring:
                 total_code_lines=1000,
                 files_analyzed=10,
                 has_tests=True,
-                secret_count=0,
+                security_findings=[],
+                security_scan_status="complete",
                 warning_density_per_1000_loc=density,
             )
 
@@ -106,7 +107,8 @@ class TestCodeSmellScoring:
             total_code_lines=0,
             files_analyzed=1,
             has_tests=True,
-            secret_count=0,
+            security_findings=[],
+            security_scan_status="complete",
             warning_density_per_1000_loc=0,
         )
         assert zero_loc_score["breakdown"]["code_smells"] == 0
@@ -136,7 +138,8 @@ class TestCodeSmellScoring:
             total_code_lines=100,
             files_analyzed=1,
             has_tests=True,
-            secret_count=0,
+            security_findings=[],
+            security_scan_status="complete",
             warning_density_per_1000_loc=2.1,
         )
 
@@ -157,7 +160,8 @@ class TestCodeSmellScoring:
             total_code_lines=100,
             files_analyzed=1,
             has_tests=True,
-            secret_count=0,
+            security_findings=[],
+            security_scan_status="complete",
             warning_density_per_1000_loc=0,
         )
 

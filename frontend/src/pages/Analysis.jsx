@@ -275,11 +275,21 @@ function Analysis({ candidate, selectedRepositories, taskId }) {
                   <h2>{repo.name}</h2>
 
                   <p>Repository status: {repo.status}</p>
+                  {repo.security_scan && (
+                    <p className="security-scan-status is-incomplete">
+                      Gitleaks {repo.security_scan.status}; Security score
+                      0/20 ({repo.security_scan.error_code}).
+                    </p>
+                  )}
                 </article>
               );
             }
 
             const score = analysis.static_score || {};
+            const securityScan = analysis.security_scan;
+            const securityFindings = Array.isArray(securityScan?.findings)
+              ? securityScan.findings
+              : [];
             const warningDensity = analysis.warning_density_per_1000_loc;
             const hasWarningDensity =
               typeof warningDensity === "number" &&
@@ -324,7 +334,11 @@ function Analysis({ candidate, selectedRepositories, taskId }) {
 
                   <ScoreBar
                     label="SECURITY"
-                    value={score.breakdown?.security || 0}
+                    value={
+                      securityScan
+                        ? score.breakdown?.security
+                        : null
+                    }
                     max={20}
                   />
 
@@ -334,6 +348,77 @@ function Analysis({ candidate, selectedRepositories, taskId }) {
                     max={15}
                   />
                 </div>
+
+                <section className="security-report">
+                  <div className="security-report-header">
+                    <h3>GITLEAKS SECURITY SCAN</h3>
+                    <strong>
+                      {securityScan?.finding_count ?? "—"} UNIQUE FINDINGS
+                    </strong>
+                  </div>
+
+                  {securityScan?.status === "complete" ? (
+                    securityFindings.length === 0 ? (
+                      <p className="security-scan-status is-complete">
+                        Scan complete; no findings detected. This does not
+                        prove the repository is entirely secure.
+                      </p>
+                    ) : (
+                      <p className="security-scan-status is-complete">
+                        Scan complete. Findings are potential and have not
+                        been verified.
+                      </p>
+                    )
+                  ) : (
+                    <p className="security-scan-status is-incomplete">
+                      {securityScan?.status === "partial"
+                        ? "Scan incomplete; Git history coverage is limited."
+                        : "Scan failed or unavailable; Security score is fail-closed."}
+                      {securityScan?.error_code
+                        ? ` (${securityScan.error_code})`
+                        : ""}
+                    </p>
+                  )}
+                  <p className="security-scan-policy">
+                    Scan scope:{" "}
+                    {securityScan?.scan_mode === "git"
+                      ? "Git history"
+                      : securityScan?.scan_mode === "dir"
+                        ? "working tree only"
+                        : "unavailable"}
+                    . Gitleaks allowlists are honored; suppressed matches are
+                    excluded from the finding count.
+                  </p>
+
+                  {securityFindings.length > 0 && (
+                    <ul className="security-findings">
+                      {securityFindings.map((finding, index) => (
+                        <li
+                          key={`${finding.rule_id}-${finding.file}-${finding.line}-${index}`}
+                        >
+                          <div className="security-finding-heading">
+                            <strong>{finding.rule_id}</strong>
+                            <span
+                              title={
+                                finding.severity_source ===
+                                "application_rule_map"
+                                  ? "Severity assigned by application rule-ID policy"
+                                  : "Gitleaks does not provide severity for this rule"
+                              }
+                            >
+                              {finding.severity}
+                            </span>
+                          </div>
+                          <p>{finding.description}</p>
+                          <small>
+                            {finding.file || "File unavailable"}
+                            {finding.line ? `:${finding.line}` : ""}
+                          </small>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </section>
 
                 {/* CODE OVERVIEW */}
 
@@ -529,7 +614,10 @@ function Analysis({ candidate, selectedRepositories, taskId }) {
    ========================================== */
 
 function ScoreBar({ label, value, max }) {
-  const percentage = Math.min((value / max) * 100, 100);
+  const hasScore = typeof value === "number" && Number.isFinite(value);
+  const percentage = hasScore
+    ? Math.min((value / max) * 100, 100)
+    : 0;
 
   return (
     <div className="score-bar">
@@ -537,7 +625,7 @@ function ScoreBar({ label, value, max }) {
         <span>{label}</span>
 
         <strong>
-          {value}/{max}
+          {hasScore ? `${value}/${max}` : `N/A/${max}`}
         </strong>
       </div>
 

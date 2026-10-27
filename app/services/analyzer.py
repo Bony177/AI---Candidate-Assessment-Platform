@@ -3,7 +3,7 @@ from pathlib import Path
 from .ast_analyzer import analyze_python_file
 from .js_analyzer import analyze_javascript_file
 from .metrics import calculate_loc
-from .security import scan_file_for_secrets
+from .gitleaks import scan_repository_with_gitleaks
 from .test_detector import detect_tests
 from .smells import detect_code_smells
 from .scoring import calculate_static_score
@@ -41,7 +41,7 @@ def analyze_repository(repo_path: str) -> dict:
     Includes:
     - AST analysis
     - LOC metrics
-    - Secret detection
+    - Gitleaks security scanning
     - Test detection
     - Code smell detection
     - Static analysis scoring
@@ -95,8 +95,6 @@ def analyze_repository(repo_path: str) -> dict:
 
     file_results = []
 
-    secret_findings = []
-
     total_code_lines = 0
     total_functions = 0
     total_classes = 0
@@ -127,14 +125,6 @@ def analyze_repository(repo_path: str) -> dict:
         loc_result = calculate_loc(file_path)
 
         # ----------------------------------------------
-        # SECRET SCAN
-        # ----------------------------------------------
-
-        secrets = scan_file_for_secrets(file_path)
-
-        secret_findings.extend(secrets)
-
-        # ----------------------------------------------
         # CODE SMELLS
         # ----------------------------------------------
 
@@ -157,7 +147,7 @@ def analyze_repository(repo_path: str) -> dict:
                 "language": suffix.lstrip("."),
                 "ast": ast_result,
                 "loc": loc_result,
-                "secrets": secrets,
+                "secrets": [],
                 "smells": smells,
             })
 
@@ -186,9 +176,24 @@ def analyze_repository(repo_path: str) -> dict:
             "language": suffix.lstrip("."),
             "ast": ast_result,
             "loc": loc_result,
-            "secrets": secrets,
+            "secrets": [],
             "smells": smells,
         })
+
+    # --------------------------------------------------
+    # GITLEAKS SECURITY SCAN
+    # --------------------------------------------------
+
+    security_scan = scan_repository_with_gitleaks(repo)
+    findings_by_file = {}
+    for finding in security_scan["findings"]:
+        file_path = finding.get("file")
+        if file_path:
+            findings_by_file.setdefault(file_path, []).append(finding)
+
+    for file_result in file_results:
+        relative_file = Path(file_result["file"]).relative_to(repo).as_posix()
+        file_result["secrets"] = findings_by_file.get(relative_file, [])
 
     # --------------------------------------------------
     # TEST DETECTION
@@ -242,7 +247,8 @@ def analyze_repository(repo_path: str) -> dict:
         total_code_lines=total_code_lines,
         files_analyzed=len(source_files),
         has_tests=test_result["has_tests"],
-        secret_count=len(secret_findings),
+        security_findings=security_scan["findings"],
+        security_scan_status=security_scan["status"],
         warning_density_per_1000_loc=warning_density_per_1000_loc,
     )
 
@@ -271,7 +277,9 @@ def analyze_repository(repo_path: str) -> dict:
 
         "loc_status": loc_status,
 
-        "potential_secrets": secret_findings,
+        "potential_secrets": security_scan["findings"],
+
+        "security_scan": security_scan,
 
         "tests": test_result,
 

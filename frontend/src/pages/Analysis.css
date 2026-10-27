@@ -245,6 +245,84 @@
   transition: width 0.8s ease;
 }
 
+.security-report {
+  max-width: 900px;
+  margin-top: 32px;
+  border-top: 1px solid #29292d;
+}
+
+.security-report-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 18px 0 10px;
+}
+
+.security-report-header h3,
+.security-report-header strong,
+.security-finding-heading,
+.security-findings small {
+  font-size: 9px;
+  letter-spacing: 1px;
+}
+
+.security-report-header h3,
+.security-scan-status,
+.security-scan-policy,
+.security-findings p,
+.security-findings small {
+  color: #77777e;
+}
+
+.security-report-header strong {
+  color: #f2f2f0;
+  text-align: right;
+}
+
+.security-scan-status,
+.security-scan-policy,
+.security-findings p {
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.security-scan-status.is-incomplete {
+  color: #d6a461;
+}
+
+.security-findings {
+  display: grid;
+  gap: 10px;
+  margin: 18px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.security-findings li {
+  padding: 14px;
+  border: 1px solid #29292d;
+}
+
+.security-finding-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  color: #f2f2f0;
+  text-transform: uppercase;
+}
+
+.security-finding-heading span {
+  color: #d6a461;
+}
+
+.security-findings p {
+  margin: 8px 0;
+}
+
+.security-findings small {
+  overflow-wrap: anywhere;
+}
+
 
 /* CODE OVERVIEW */
 

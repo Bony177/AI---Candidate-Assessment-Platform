@@ -10,7 +10,8 @@ def clone_repositories(
     max_repos: int = 5
 ) -> Dict[str, str]:
     """
-    Shallow clones the selected repositories into temporary system folders.
+    Clones the selected repositories, including their Git history, into
+    temporary system folders.
 
     Each repository should contain:
         {
@@ -51,8 +52,6 @@ def clone_repositories(
                 [
                     "git",
                     "clone",
-                    "--depth",
-                    "1",
                     clone_url,
                     temp_dir
                 ],
@@ -60,7 +59,7 @@ def clone_repositories(
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
-                timeout=120
+                timeout=300
             )
 
             cloned_paths[name] = temp_dir
@@ -72,12 +71,13 @@ def clone_repositories(
 
         except (
             subprocess.CalledProcessError,
-            subprocess.TimeoutExpired
-        ) as err:
+            subprocess.TimeoutExpired,
+            OSError,
+        ) as error:
 
             print(
                 f"[Cloner Error] Failed cloning "
-                f"{owner}/{name}: {err}"
+                f"{owner}/{name} ({type(error).__name__})"
             )
 
             shutil.rmtree(

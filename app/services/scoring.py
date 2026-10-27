@@ -63,21 +63,34 @@ def calculate_testing_score(has_tests: bool) -> int:
     return 0
 
 
-def calculate_security_score(secret_count: int) -> int:
+SECURITY_FINDING_DEDUCTIONS = {
+    "critical": 10,
+    "high": 6,
+    "medium": 3,
+    "low": 1,
+    "unclassified": 3,
+}
+
+
+def calculate_security_score(
+    findings: list[dict],
+    scan_status: str,
+) -> int:
     """
-    Calculate security score based on
-    detected potential secrets.
-    Maximum score: 20
+    Score unique Gitleaks findings; incomplete scans fail closed.
     """
 
-    if secret_count == 0:
-        return 20
-
-    elif secret_count == 1:
-        return 10
-
-    else:
+    if scan_status != "complete":
         return 0
+
+    deduction = sum(
+        SECURITY_FINDING_DEDUCTIONS.get(
+            finding.get("severity", "unclassified"),
+            SECURITY_FINDING_DEDUCTIONS["unclassified"],
+        )
+        for finding in findings
+    )
+    return max(0, 20 - deduction)
 
 
 def calculate_code_smell_score(
@@ -116,7 +129,8 @@ def calculate_static_score(
     total_code_lines: int,
     files_analyzed: int,
     has_tests: bool,
-    secret_count: int,
+    security_findings: list[dict],
+    security_scan_status: str,
     warning_density_per_1000_loc: float,
 ) -> dict:
     """
@@ -137,7 +151,8 @@ def calculate_static_score(
     )
 
     security_score = calculate_security_score(
-        secret_count
+        security_findings,
+        security_scan_status,
     )
 
     smell_score = calculate_code_smell_score(

@@ -170,6 +170,16 @@ async def run_assessment_pipeline(
                 repository_result.update({
                     "status": "clone_failed",
                     "error": "Repository could not be cloned.",
+                    "security_scan": {
+                        "tool": "gitleaks",
+                        "status": "failed",
+                        "scan_mode": "unavailable",
+                        "history_status": "unavailable",
+                        "suppression_policy": "gitleaks_allowlists_honored",
+                        "error_code": "repository_unavailable",
+                        "finding_count": 0,
+                        "findings": [],
+                    },
                 })
 
                 repository_results.append(repository_result)
@@ -223,12 +233,23 @@ async def run_assessment_pipeline(
             except Exception as error:
                 repository_result.update({
                     "status": "analysis_failed",
-                    "error": str(error),
+                    "error": "Repository analysis failed.",
+                    "security_scan": {
+                        "tool": "gitleaks",
+                        "status": "failed",
+                        "scan_mode": "unavailable",
+                        "history_status": "unavailable",
+                        "suppression_policy": "gitleaks_allowlists_honored",
+                        "error_code": "analysis_failed",
+                        "finding_count": 0,
+                        "findings": [],
+                    },
                 })
 
-                logger.exception(
-                    "Static analysis failed for %s",
+                logger.error(
+                    "Static analysis failed for %s (%s)",
                     name,
+                    type(error).__name__,
                 )
 
             repository_results.append(repository_result)
@@ -303,11 +324,12 @@ async def run_assessment_pipeline(
 
     except Exception as error:
         JOBS_DB[task_id]["status"] = "FAILED"
-        JOBS_DB[task_id]["error"] = str(error)
+        JOBS_DB[task_id]["error"] = "Assessment pipeline failed."
 
-        logger.exception(
-            "Candidate analysis failed for %s",
+        logger.error(
+            "Candidate analysis failed for %s (%s)",
             username,
+            type(error).__name__,
         )
 
     finally:
