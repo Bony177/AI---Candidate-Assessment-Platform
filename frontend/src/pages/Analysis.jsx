@@ -363,6 +363,25 @@ function Analysis({ candidate, selectedRepositories, taskId }) {
 
                     <strong>{analysis.total_smells ?? 0}</strong>
                   </div>
+
+                  <div
+                    title={
+                      analysis.loc_status && analysis.loc_status !== "ok"
+                        ? analysis.loc_status
+                        : "Warnings per 1,000 lines of code"
+                    }
+                  >
+                    <span>WARNINGS / 1K LOC</span>
+
+                    <strong>
+                      {analysis.warning_density_per_1000_loc != null
+                        ? analysis.warning_density_per_1000_loc
+                        : "—"}
+                      {analysis.loc_status &&
+                        analysis.loc_status !== "ok" &&
+                        " *"}
+                    </strong>
+                  </div>
                 </div>
               </article>
             );

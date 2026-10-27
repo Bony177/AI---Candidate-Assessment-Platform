@@ -220,6 +220,33 @@ def analyze_repository(repo_path: str) -> dict:
     )
 
     # --------------------------------------------------
+    # WARNING DENSITY PER 1,000 LOC
+    # --------------------------------------------------
+    # Formula: (total_smells / total_code_lines) * 1000
+    #
+    # raw_warning_count = total_smells (code smell findings,
+    #   deduplicated per-file across Python and JS/TS).
+    # LOC denominator   = total_code_lines (blank and comment
+    #   lines excluded by calculate_loc).
+    #
+    # Zero LOC: density is 0 with loc_status "zero_loc"
+    # so the value is not misinterpreted as excellent quality.
+    # --------------------------------------------------
+
+    if total_code_lines > 0:
+        warning_density_per_1000_loc = round(
+            (total_smells / total_code_lines) * 1000, 2
+        )
+        loc_status = "ok"
+    else:
+        warning_density_per_1000_loc = 0
+        loc_status = (
+            "zero_loc — no code lines found; "
+            "density is 0 by convention, not indicative "
+            "of code quality"
+        )
+
+    # --------------------------------------------------
     # FINAL RESULT
     # --------------------------------------------------
 
@@ -239,6 +266,10 @@ def analyze_repository(repo_path: str) -> dict:
         "average_complexity": average_complexity,
 
         "total_smells": total_smells,
+
+        "warning_density_per_1000_loc": warning_density_per_1000_loc,
+
+        "loc_status": loc_status,
 
         "potential_secrets": secret_findings,
 
