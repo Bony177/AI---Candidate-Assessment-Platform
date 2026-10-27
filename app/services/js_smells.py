@@ -39,7 +39,17 @@ def detect_javascript_code_smells(file_path: Path) -> list:
             {
                 "file": str(file_path),
                 "type": "parse_error",
-                "message": str(error),
+                "message": "JavaScript/TypeScript file could not be read.",
+                "severity": "high",
+            }
+        ]
+
+    if root.has_error:
+        return [
+            {
+                "file": str(file_path),
+                "type": "parse_error",
+                "message": "JavaScript/TypeScript parsing failed.",
                 "severity": "high",
             }
         ]

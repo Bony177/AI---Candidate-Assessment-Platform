@@ -16,6 +16,19 @@ MAX_REPOSITORIES = 3
 JOBS_DB: Dict[str, Dict[str, Any]] = {}
 
 
+def _failed_coverage(reason: str) -> dict:
+    return {
+        "supported_files_discovered": None,
+        "files_analyzed": None,
+        "files_skipped": None,
+        "files_failed": None,
+        "coverage_percentage": None,
+        "status": "failed",
+        "reason": reason,
+        "file_details": [],
+    }
+
+
 def _select_repositories(raw_github: dict) -> list[dict]:
     """Select public, non-fork, non-archived repositories owned by the candidate."""
 
@@ -170,6 +183,9 @@ async def run_assessment_pipeline(
                 repository_result.update({
                     "status": "clone_failed",
                     "error": "Repository could not be cloned.",
+                    "analysis_coverage": _failed_coverage(
+                        "The repository could not be cloned, so source files were not discovered."
+                    ),
                     "security_scan": {
                         "tool": "gitleaks",
                         "status": "failed",
@@ -203,8 +219,10 @@ async def run_assessment_pipeline(
                     clone_path,
                 )
 
-                # Repository does not contain supported Python files
-                if not analysis.get("files_analyzed"):
+                coverage = analysis.get("analysis_coverage", {})
+
+                # No eligible files were found by the existing discovery pass.
+                if coverage.get("status") == "no_supported_files":
                     repository_result.update({
                         "status": "unsupported_for_static_analysis",
                         "analysis": analysis,
@@ -212,7 +230,7 @@ async def run_assessment_pipeline(
                     })
 
                     logger.info(
-                        "Repository %s has no Python files",
+                        "Repository %s has no supported source files",
                         name,
                     )
 
@@ -221,19 +239,26 @@ async def run_assessment_pipeline(
                     repository_result.update({
                         "status": "analyzed",
                         "analysis": analysis,
-                        "static_score": analysis["static_score"],
+                        "static_score": analysis.get("static_score"),
                     })
 
                     logger.info(
                         "Completed static analysis for %s with score %s",
                         name,
-                        analysis["static_score"]["total_score"],
+                        (
+                            analysis["static_score"]["total_score"]
+                            if analysis.get("static_score")
+                            else "unavailable"
+                        ),
                     )
 
             except Exception as error:
                 repository_result.update({
                     "status": "analysis_failed",
                     "error": "Repository analysis failed.",
+                    "analysis_coverage": _failed_coverage(
+                        "Repository analysis could not be completed."
+                    ),
                     "security_scan": {
                         "tool": "gitleaks",
                         "status": "failed",
@@ -293,8 +318,6 @@ async def run_assessment_pipeline(
         # ---------------------------------------------------------
         # Stage 5: Final report
         # ---------------------------------------------------------
-        JOBS_DB[task_id]["status"] = "COMPLETED"
-
         JOBS_DB[task_id]["report"] = {
             "candidate": {
                 "username": raw_github.get("login"),
@@ -321,6 +344,7 @@ async def run_assessment_pipeline(
 
             "jd_match_and_interview": mock_ai_results,
         }
+        JOBS_DB[task_id]["status"] = "COMPLETED"
 
     except Exception as error:
         JOBS_DB[task_id]["status"] = "FAILED"

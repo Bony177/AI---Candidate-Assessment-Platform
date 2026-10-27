@@ -27,12 +27,14 @@ def calculate_loc(file_path: Path) -> dict:
     try:
         source = file_path.read_text(encoding="utf-8")
 
-    except (OSError, UnicodeDecodeError):
+    except (OSError, UnicodeDecodeError) as error:
         return {
             "total_lines": 0,
             "code_lines": 0,
             "comment_lines": 0,
             "blank_lines": 0,
+            "success": False,
+            "error_code": type(error).__name__,
         }
 
     lines = source.splitlines()
@@ -128,6 +130,7 @@ def calculate_loc(file_path: Path) -> dict:
         "code_lines": code_lines,
         "comment_lines": comment_lines,
         "blank_lines": blank_lines,
+        "success": True,
     }
 
 

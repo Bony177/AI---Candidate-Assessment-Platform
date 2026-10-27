@@ -1,4 +1,5 @@
 from pathlib import Path
+import logging
 
 from .ast_analyzer import analyze_python_file
 from .js_analyzer import analyze_javascript_file
@@ -9,6 +10,7 @@ from .smells import detect_code_smells
 from .scoring import calculate_static_score
 from .js_smells import detect_javascript_code_smells
 
+logger = logging.getLogger(__name__)
 
 SUPPORTED_EXTENSIONS = {
     ".py",
@@ -18,6 +20,15 @@ SUPPORTED_EXTENSIONS = {
     ".tsx",
 }
 
+LANGUAGE_NAMES = {
+    ".py": "Python",
+    ".js": "JavaScript",
+    ".jsx": "JSX",
+    ".ts": "TypeScript",
+    ".tsx": "TSX",
+}
+
+
 IGNORED_DIRECTORIES = {
     ".git",
     "venv",
@@ -25,6 +36,48 @@ IGNORED_DIRECTORIES = {
     "node_modules",
     "__pycache__",
 }
+
+
+def _build_analysis_coverage(file_details: list[dict]) -> dict:
+    """Aggregate unique discovered file outcomes into a coverage summary."""
+    priority = {"analyzed": 0, "skipped": 1, "failed": 2}
+    unique_details = {}
+    for detail in file_details:
+        path = detail.get("path")
+        if not path:
+            continue
+        current = unique_details.get(path)
+        if current is None or priority.get(
+            detail.get("status"), -1
+        ) > priority.get(current.get("status"), -1):
+            unique_details[path] = detail
+
+    details = list(unique_details.values())
+    counts = {
+        outcome: sum(detail.get("status") == outcome for detail in details)
+        for outcome in ("analyzed", "skipped", "failed")
+    }
+    discovered = len(details)
+
+    if discovered == 0:
+        status = "no_supported_files"
+        percentage = None
+    elif counts["analyzed"] == discovered:
+        status = "complete"
+        percentage = 100.0
+    else:
+        status = "partial"
+        percentage = round(counts["analyzed"] / discovered * 100, 1)
+
+    return {
+        "supported_files_discovered": discovered,
+        "files_analyzed": counts["analyzed"],
+        "files_skipped": counts["skipped"],
+        "files_failed": counts["failed"],
+        "coverage_percentage": percentage,
+        "status": status,
+        "file_details": details,
+    }
 
 
 def analyze_repository(repo_path: str) -> dict:
@@ -94,6 +147,7 @@ def analyze_repository(repo_path: str) -> dict:
     # --------------------------------------------------
 
     file_results = []
+    file_details = []
 
     total_code_lines = 0
     total_functions = 0
@@ -108,49 +162,85 @@ def analyze_repository(repo_path: str) -> dict:
     for file_path in source_files:
 
         suffix = file_path.suffix.lower()
+        relative_path = file_path.relative_to(repo).as_posix()
+        stage = "python_ast" if suffix == ".py" else "tree_sitter"
+        ast_result = None
+        loc_result = {}
+        smells = []
+        failure_reason = None
 
-        # ----------------------------------------------
-        # LANGUAGE-SPECIFIC AST ANALYSIS
-        # ----------------------------------------------
+        try:
+            if suffix == ".py":
+                ast_result = analyze_python_file(file_path)
+            else:
+                ast_result = analyze_javascript_file(file_path)
 
-        if suffix == ".py":
-            ast_result = analyze_python_file(file_path)
-        else:
-            ast_result = analyze_javascript_file(file_path)
+            if not ast_result.get("success"):
+                failure_reason = (
+                    "Python parsing failed."
+                    if suffix == ".py"
+                    else "JavaScript/TypeScript parsing failed."
+                )
+            else:
+                stage = "lines_of_code"
+                loc_result = calculate_loc(file_path)
+                if loc_result.get("success") is False:
+                    error_code = loc_result.get("error_code", "read_error")
+                    failure_reason = (
+                        f"Lines-of-code analysis failed ({error_code})."
+                    )
 
-        # ----------------------------------------------
-        # LOC ANALYSIS
-        # ----------------------------------------------
+            if failure_reason is None:
+                stage = "code_smells"
+                if suffix == ".py":
+                    smells = detect_code_smells(file_path)
+                else:
+                    smells = detect_javascript_code_smells(file_path)
+                if any(
+                    smell.get("type") in {"parse_error", "unsupported_file"}
+                    for smell in smells
+                ):
+                    failure_reason = (
+                        "Code-smell analysis could not process the file."
+                    )
+                    smells = []
+        except Exception as error:
+            error_code = type(error).__name__
+            failure_reason = f"Analysis failed during {stage} ({error_code})."
+            logger.warning(
+                "File analysis failed for %s during %s (%s)",
+                relative_path,
+                stage,
+                error_code,
+            )
 
-        loc_result = calculate_loc(file_path)
+        if ast_result is not None:
+            ast_result["file"] = relative_path
+        for smell in smells:
+            if smell.get("file"):
+                smell["file"] = relative_path
 
-        # ----------------------------------------------
-        # CODE SMELLS
-        # ----------------------------------------------
+        outcome = "failed" if failure_reason else "analyzed"
+        file_detail = {
+            "path": relative_path,
+            "language": LANGUAGE_NAMES[suffix],
+            "status": outcome,
+            "stage": stage if failure_reason else "static_analysis",
+        }
+        if failure_reason:
+            file_detail["reason"] = failure_reason
+        file_details.append(file_detail)
 
-        # The existing smell detector is Python-oriented.
-        # Keep it on Python files for now so we don't
-        # break the existing analyzer.
-        if suffix == ".py":
-            smells = detect_code_smells(file_path)
-        else:
-            smells = detect_javascript_code_smells(file_path)
+        file_results.append({
+            "file": relative_path,
+            "language": suffix.lstrip("."),
+            "ast": ast_result,
+            "loc": loc_result,
+            "secrets": [],
+            "smells": smells,
+        })
 
-        # ----------------------------------------------
-        # HANDLE AST FAILURE
-        # ----------------------------------------------
-
-        if not ast_result["success"]:
-
-            file_results.append({
-                "file": str(file_path),
-                "language": suffix.lstrip("."),
-                "ast": ast_result,
-                "loc": loc_result,
-                "secrets": [],
-                "smells": smells,
-            })
-
+        if failure_reason:
             continue
 
         # ----------------------------------------------
@@ -167,19 +257,6 @@ def analyze_repository(repo_path: str) -> dict:
 
         total_smells += len(smells)
 
-        # ----------------------------------------------
-        # STORE FILE RESULT
-        # ----------------------------------------------
-
-        file_results.append({
-            "file": str(file_path),
-            "language": suffix.lstrip("."),
-            "ast": ast_result,
-            "loc": loc_result,
-            "secrets": [],
-            "smells": smells,
-        })
-
     # --------------------------------------------------
     # GITLEAKS SECURITY SCAN
     # --------------------------------------------------
@@ -192,7 +269,7 @@ def analyze_repository(repo_path: str) -> dict:
             findings_by_file.setdefault(file_path, []).append(finding)
 
     for file_result in file_results:
-        relative_file = Path(file_result["file"]).relative_to(repo).as_posix()
+        relative_file = Path(file_result["file"]).as_posix()
         file_result["secrets"] = findings_by_file.get(relative_file, [])
 
     # --------------------------------------------------
@@ -200,14 +277,24 @@ def analyze_repository(repo_path: str) -> dict:
     # --------------------------------------------------
 
     test_result = detect_tests(repo)
+    test_result["test_files"] = [
+        Path(path).relative_to(repo).as_posix()
+        for path in test_result["test_files"]
+    ]
 
     # --------------------------------------------------
     # CALCULATE AVERAGE COMPLEXITY
     # --------------------------------------------------
 
+    files_analyzed = sum(
+        detail["status"] == "analyzed"
+        for detail in file_details
+    )
+    analysis_coverage = _build_analysis_coverage(file_details)
+
     average_complexity = (
-        total_complexity / len(source_files)
-        if source_files
+        total_complexity / files_analyzed
+        if files_analyzed
         else 0
     )
 
@@ -245,7 +332,7 @@ def analyze_repository(repo_path: str) -> dict:
     static_score = calculate_static_score(
         complexity=average_complexity,
         total_code_lines=total_code_lines,
-        files_analyzed=len(source_files),
+        files_analyzed=files_analyzed,
         has_tests=test_result["has_tests"],
         security_findings=security_scan["findings"],
         security_scan_status=security_scan["status"],
@@ -257,9 +344,11 @@ def analyze_repository(repo_path: str) -> dict:
     # --------------------------------------------------
 
     return {
-        "repository": str(repo),
+        "repository": repo.name,
 
-        "files_analyzed": len(source_files),
+        "files_analyzed": files_analyzed,
+
+        "analysis_coverage": analysis_coverage,
 
         "total_code_lines": total_code_lines,
 

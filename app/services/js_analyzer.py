@@ -50,7 +50,8 @@ def analyze_javascript_file(file_path: Path) -> dict:
         return {
             "file": str(file_path),
             "success": False,
-            "error": str(error),
+            "error": "JavaScript/TypeScript file could not be read.",
+            "error_code": type(error).__name__,
         }
 
     functions = 0
@@ -169,7 +170,12 @@ def analyze_javascript_file(file_path: Path) -> dict:
 
     return {
         "file": str(file_path),
-        "success": True,
+        "success": not root.has_error,
+        "error": (
+            "JavaScript/TypeScript parsing failed."
+            if root.has_error
+            else None
+        ),
         "language": file_path.suffix.lower().lstrip("."),
         "functions": functions,
         "classes": classes,

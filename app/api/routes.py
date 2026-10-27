@@ -3,11 +3,12 @@ from app.question_generator import generate_questions
 from fastapi import APIRouter, HTTPException, BackgroundTasks, status
 from pydantic import BaseModel
 from typing import Optional
+import logging
 import uuid
 
 
 from app.services.job_manager import JOBS_DB, run_assessment_pipeline, _select_repositories
-from app.services.github_service import fetch_github_data
+from app.services.github_service import GitHubAPIError, fetch_github_data
 
 router = APIRouter()
 
@@ -131,10 +132,20 @@ async def get_repositories(username: str):
             detail=str(error),
         )
 
+    except GitHubAPIError as error:
+        raise HTTPException(
+            status_code=error.status_code,
+            detail=str(error),
+        )
+
     except Exception as error:
+        logging.getLogger(__name__).exception(
+            "Failed to fetch repositories for %s",
+            username,
+        )
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to fetch repositories: {str(error)}",
+            detail="An unexpected error occurred while fetching repositories.",
         )
 
 @router.post("/analyze", status_code=status.HTTP_202_ACCEPTED)

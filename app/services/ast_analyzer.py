@@ -17,7 +17,12 @@ def analyze_python_file(file_path: Path) -> dict:
         return {
             "file": str(file_path),
             "success": False,
-            "error": str(e),
+            "error": (
+                "Python parsing failed."
+                if isinstance(e, SyntaxError)
+                else "File is not valid UTF-8."
+            ),
+            "error_code": type(e).__name__,
         }
 
     functions = 0

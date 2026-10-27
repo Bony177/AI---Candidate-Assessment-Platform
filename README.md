@@ -45,3 +45,22 @@ and `private-key` to Critical; `github-pat` and `gitlab-pat` to High; and
 `generic-api-key` to Medium. All other rule IDs are Unclassified until reviewed.
 
 Set `GITLEAKS_BIN` only when the executable is not named `gitleaks` on `PATH`.
+
+## Source-file analysis coverage
+
+Each repository analysis report includes an `analysis_coverage` section.
+Coverage is calculated as successfully analyzed supported source files divided
+by all supported source files discovered by the static analyzer, multiplied by
+100, and rounded to one decimal place. The existing analyzer exclusions and
+supported extensions define that file scope. A repository with no supported
+files reports a `no_supported_files` status and an unavailable percentage.
+
+The completeness status is `complete` when every discovered supported file
+passes its static-analysis stages, `partial` when any file is skipped or
+fails, and `no_supported_files` when none are eligible. Repository-level
+analysis failures report `failed`. This file-analysis completeness is separate
+from the Gitleaks security-scan status and the existing weighted quality score.
+Per-file details contain repository-relative paths and concise reasons only.
+
+Retrieve the persisted coverage data from the existing
+`GET /api/v1/report/{task_id}` endpoint after the task completes.

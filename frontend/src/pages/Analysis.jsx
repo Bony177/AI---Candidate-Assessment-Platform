@@ -275,6 +275,7 @@ function Analysis({ candidate, selectedRepositories, taskId }) {
                   <h2>{repo.name}</h2>
 
                   <p>Repository status: {repo.status}</p>
+                  <AnalysisCoverage coverage={repo.analysis_coverage || {}} />
                   {repo.security_scan && (
                     <p className="security-scan-status is-incomplete">
                       Gitleaks {repo.security_scan.status}; Security score
@@ -286,6 +287,10 @@ function Analysis({ candidate, selectedRepositories, taskId }) {
             }
 
             const score = analysis.static_score || {};
+            const hasStaticScore =
+              repo.status !== "unsupported_for_static_analysis" &&
+              typeof score.total_score === "number" &&
+              Number.isFinite(score.total_score);
             const securityScan = analysis.security_scan;
             const securityFindings = Array.isArray(securityScan?.findings)
               ? securityScan.findings
@@ -305,9 +310,9 @@ function Analysis({ candidate, selectedRepositories, taskId }) {
                   </div>
 
                   <div className="repository-score">
-                    {score.total_score}
+                    {hasStaticScore ? score.total_score : "N/A"}
 
-                    <small>/100</small>
+                    {hasStaticScore && <small>/100</small>}
                   </div>
                 </div>
 
@@ -316,19 +321,31 @@ function Analysis({ candidate, selectedRepositories, taskId }) {
                 <div className="score-section">
                   <ScoreBar
                     label="COMPLEXITY"
-                    value={score.breakdown?.complexity || 0}
+                    value={
+                      hasStaticScore
+                        ? score.breakdown?.complexity ?? null
+                        : null
+                    }
                     max={25}
                   />
 
                   <ScoreBar
                     label="STRUCTURE"
-                    value={score.breakdown?.structure || 0}
+                    value={
+                      hasStaticScore
+                        ? score.breakdown?.structure ?? null
+                        : null
+                    }
                     max={20}
                   />
 
                   <ScoreBar
                     label="TESTING"
-                    value={score.breakdown?.testing || 0}
+                    value={
+                      hasStaticScore
+                        ? score.breakdown?.testing ?? null
+                        : null
+                    }
                     max={20}
                   />
 
@@ -336,7 +353,9 @@ function Analysis({ candidate, selectedRepositories, taskId }) {
                     label="SECURITY"
                     value={
                       securityScan
-                        ? score.breakdown?.security
+                        ? hasStaticScore
+                          ? score.breakdown?.security
+                          : null
                         : null
                     }
                     max={20}
@@ -344,10 +363,16 @@ function Analysis({ candidate, selectedRepositories, taskId }) {
 
                   <ScoreBar
                     label="CODE SMELLS"
-                    value={score.breakdown?.code_smells || 0}
+                    value={
+                      hasStaticScore
+                        ? score.breakdown?.code_smells ?? null
+                        : null
+                    }
                     max={15}
                   />
                 </div>
+
+                <AnalysisCoverage coverage={analysis.analysis_coverage || {}} />
 
                 <section className="security-report">
                   <div className="security-report-header">
@@ -633,6 +658,134 @@ function ScoreBar({ label, value, max }) {
         <div className="score-fill" style={{ width: `${percentage}%` }} />
       </div>
     </div>
+  );
+}
+
+export function AnalysisCoverage({ coverage }) {
+  const percentage = coverage.coverage_percentage;
+  const hasPercentage =
+    typeof percentage === "number" && Number.isFinite(percentage);
+  const fileDetails = Array.isArray(coverage.file_details)
+    ? coverage.file_details
+    : [];
+  const incompleteFiles = fileDetails.filter(
+    (file) => file.status === "skipped" || file.status === "failed",
+  );
+  const status = coverage.status || "unavailable";
+  const isIncomplete = status === "partial" || status === "failed";
+  const reason =
+    coverage.reason ||
+    (typeof coverage.files_failed === "number" &&
+    typeof coverage.files_skipped === "number"
+      ? `${coverage.files_failed} file(s) failed and ${coverage.files_skipped} file(s) were skipped.`
+      : "Some file outcomes are incomplete.");
+
+  return (
+    <section
+      className={`analysis-coverage status-${status}`}
+      aria-label="Analysis Coverage and Confidence"
+    >
+      <div className="analysis-coverage-header">
+        <div>
+          <span>[ SOURCE-FILE ANALYSIS ]</span>
+          <h3>Analysis Coverage &amp; Confidence</h3>
+        </div>
+        <strong className={`coverage-status status-${status}`}>
+          {status.replaceAll("_", " ")}
+        </strong>
+      </div>
+
+      {isIncomplete && (
+        <p className="coverage-warning" role="status">
+          Analysis is incomplete. {reason}
+        </p>
+      )}
+
+      {status === "no_supported_files" && (
+        <p className="coverage-empty">
+          No supported source files were discovered for analysis.
+        </p>
+      )}
+
+      {status === "unavailable" && (
+        <p className="coverage-empty">
+          Coverage details are unavailable in this report.
+        </p>
+      )}
+
+      {hasPercentage ? (
+        <div className="coverage-meter">
+          <div className="coverage-meter-label">
+            <span>FILE-ANALYSIS COVERAGE</span>
+            <strong>{percentage.toFixed(1)}%</strong>
+          </div>
+          <div
+            className="coverage-track"
+            role="progressbar"
+            aria-label="Source-file analysis coverage"
+            aria-valuemin="0"
+            aria-valuemax="100"
+            aria-valuenow={Math.min(Math.max(percentage, 0), 100)}
+          >
+            <div
+              className="coverage-fill"
+              style={{ width: `${Math.min(Math.max(percentage, 0), 100)}%` }}
+            />
+          </div>
+        </div>
+      ) : (
+        <p className="coverage-unavailable">Coverage percentage: unavailable</p>
+      )}
+
+      <dl className="coverage-counts">
+        {[
+          ["Discovered", coverage.supported_files_discovered],
+          ["Analyzed", coverage.files_analyzed],
+          ["Skipped", coverage.files_skipped],
+          ["Failed", coverage.files_failed],
+        ].map(([label, count]) => (
+          <div key={label}>
+            <dt>{label}</dt>
+            <dd>{typeof count === "number" ? count : "—"}</dd>
+          </div>
+        ))}
+      </dl>
+
+      {incompleteFiles.length > 0 && (
+        <details className="coverage-file-details">
+          <summary>
+            View skipped or failed files ({incompleteFiles.length})
+          </summary>
+          <ul>
+            {incompleteFiles.map((file, index) => (
+              <li key={`${file.path || "file"}-${index}`}>
+                <div>
+                  <strong>{file.path || "Path unavailable"}</strong>
+                  <span>{file.status}</span>
+                </div>
+                {file.reason && <p>{file.reason}</p>}
+                {file.stage && <small>Stage: {file.stage}</small>}
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+
+      {fileDetails.length === 0 &&
+        (coverage.files_skipped > 0 || coverage.files_failed > 0) && (
+          <p className="coverage-empty">
+            Per-file outcome details are unavailable.
+          </p>
+        )}
+
+      <p className="coverage-disclaimer">
+        Analysis coverage indicates the proportion of discovered supported
+        source files successfully processed by CODE//ASSESS. It does not measure
+        unit-test coverage or guarantee that all defects have been detected.
+        The status is an analysis-completeness indicator, not a confidence
+        score.
+      </p>
+    </section>
   );
 }
 
