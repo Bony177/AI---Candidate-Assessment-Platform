@@ -280,6 +280,10 @@ function Analysis({ candidate, selectedRepositories, taskId }) {
             }
 
             const score = analysis.static_score || {};
+            const warningDensity = analysis.warning_density_per_1000_loc;
+            const hasWarningDensity =
+              typeof warningDensity === "number" &&
+              Number.isFinite(warningDensity);
 
             return (
               <article className="report-repository" key={repo.name}>
@@ -373,10 +377,16 @@ function Analysis({ candidate, selectedRepositories, taskId }) {
                   >
                     <span>WARNINGS / 1K LOC</span>
 
-                    <strong>
-                      {analysis.warning_density_per_1000_loc != null
-                        ? analysis.warning_density_per_1000_loc
-                        : "—"}
+                    <strong
+                      title={
+                        hasWarningDensity
+                          ? undefined
+                          : "Warning density is unavailable in the report"
+                      }
+                    >
+                      {hasWarningDensity
+                        ? warningDensity.toFixed(2)
+                        : "N/A"}
                       {analysis.loc_status &&
                         analysis.loc_status !== "ok" &&
                         " *"}

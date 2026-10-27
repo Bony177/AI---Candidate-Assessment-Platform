@@ -80,23 +80,32 @@ def calculate_security_score(secret_count: int) -> int:
         return 0
 
 
-def calculate_smell_score(smell_count: int) -> int:
+def calculate_code_smell_score(
+    warning_density: float,
+    total_code_lines: int,
+) -> int:
     """
-    Calculate code smell score.
+    Calculate the code smell score from warning density per 1,000 LOC.
     Maximum score: 15
     """
 
-    if smell_count == 0:
+    if total_code_lines <= 0:
+        return 0
+
+    if warning_density <= 2:
         return 15
 
-    elif smell_count <= 2:
+    elif warning_density <= 5:
         return 12
 
-    elif smell_count <= 5:
-        return 8
+    elif warning_density <= 10:
+        return 9
 
-    elif smell_count <= 10:
-        return 4
+    elif warning_density <= 20:
+        return 6
+
+    elif warning_density <= 40:
+        return 3
 
     else:
         return 0
@@ -108,7 +117,7 @@ def calculate_static_score(
     files_analyzed: int,
     has_tests: bool,
     secret_count: int,
-    smell_count: int,
+    warning_density_per_1000_loc: float,
 ) -> dict:
     """
     Calculate the complete static analysis score.
@@ -131,8 +140,9 @@ def calculate_static_score(
         secret_count
     )
 
-    smell_score = calculate_smell_score(
-        smell_count
+    smell_score = calculate_code_smell_score(
+        warning_density_per_1000_loc,
+        total_code_lines,
     )
 
     total_score = (

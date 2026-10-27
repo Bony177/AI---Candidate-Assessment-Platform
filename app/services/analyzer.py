@@ -207,19 +207,6 @@ def analyze_repository(repo_path: str) -> dict:
     )
 
     # --------------------------------------------------
-    # CALCULATE STATIC ANALYSIS SCORE
-    # --------------------------------------------------
-
-    static_score = calculate_static_score(
-        complexity=average_complexity,
-        total_code_lines=total_code_lines,
-        files_analyzed=len(source_files),
-        has_tests=test_result["has_tests"],
-        secret_count=len(secret_findings),
-        smell_count=total_smells,
-    )
-
-    # --------------------------------------------------
     # WARNING DENSITY PER 1,000 LOC
     # --------------------------------------------------
     # Formula: (total_smells / total_code_lines) * 1000
@@ -245,6 +232,19 @@ def analyze_repository(repo_path: str) -> dict:
             "density is 0 by convention, not indicative "
             "of code quality"
         )
+
+    # --------------------------------------------------
+    # CALCULATE STATIC ANALYSIS SCORE
+    # --------------------------------------------------
+
+    static_score = calculate_static_score(
+        complexity=average_complexity,
+        total_code_lines=total_code_lines,
+        files_analyzed=len(source_files),
+        has_tests=test_result["has_tests"],
+        secret_count=len(secret_findings),
+        warning_density_per_1000_loc=warning_density_per_1000_loc,
+    )
 
     # --------------------------------------------------
     # FINAL RESULT
